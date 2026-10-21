@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\BookType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 
 class BookTypeController extends Controller
 {
@@ -15,7 +17,22 @@ class BookTypeController extends Controller
 
     public function store(Request $request)
     {
-        $bookType = BookType::create($request->all());
+        $validated = $request->validate([
+            'BookTypeName' => ['required', 'string', 'max:255'],
+            'BookTypePicture' => ['nullable', 'image', 'mimes:jpeg,jpg,png,gif,webp', 'max:5120'],
+        ]);
+
+        if ($request->hasFile('BookTypePicture')) {
+            $picturePath = $request->file('BookTypePicture')->storePublicly('categorie', 'public');
+
+            if ($picturePath === false) {
+                throw new RuntimeException('The book type picture could not be stored.');
+            }
+
+            $validated['BookTypePicture'] = $picturePath;
+        }
+
+        $bookType = BookType::create($validated);
 
         return response()->json($bookType, 201);
     }
@@ -39,7 +56,28 @@ class BookTypeController extends Controller
             return response()->json(['message' => 'Not Found'], 404);
         }
 
-        $bookType->update($request->all());
+        $validated = $request->validate([
+            'BookTypeName' => ['sometimes', 'required', 'string', 'max:255'],
+            'BookTypePicture' => ['nullable', 'image', 'mimes:jpeg,jpg,png,gif,webp', 'max:5120'],
+        ]);
+
+        if ($request->hasFile('BookTypePicture')) {
+            $picturePath = $request->file('BookTypePicture')->storePublicly('categorie', 'public');
+
+            if ($picturePath === false) {
+                throw new RuntimeException('The book type picture could not be stored.');
+            }
+
+            $oldPicturePath = $bookType->BookTypePicture;
+            $validated['BookTypePicture'] = $picturePath;
+            $bookType->update($validated);
+
+            if ($oldPicturePath && ! Storage::disk('public')->delete($oldPicturePath)) {
+                throw new RuntimeException('The previous book type picture could not be deleted.');
+            }
+        } else {
+            $bookType->update($validated);
+        }
 
         return response()->json($bookType, 200);
     }
@@ -50,6 +88,10 @@ class BookTypeController extends Controller
 
         if (! $bookType) {
             return response()->json(['message' => 'Not Found'], 404);
+        }
+
+        if ($bookType->BookTypePicture && ! Storage::disk('public')->delete($bookType->BookTypePicture)) {
+            throw new RuntimeException('The book type picture could not be deleted.');
         }
 
         $bookType->delete();
